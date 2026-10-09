@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Now — 현재에 머무는 일정</title>
+<style>
+  :root {
+    --bg: #f7f6f3;
+    --card: #ffffff;
+    --text: #2b2b2b;
+    --muted: #8a8a8a;
+    --line: #e7e5e0;
+    --accent: #4a6fa5;
+    --done: #b8b8b8;
+    --danger: #d9534f;
+    --tomorrow: #5a9a6e;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    user-select: none;
+    -webkit-user-select: none;
+    overscroll-behavior: none;
+  }
+  #app { max-width: 480px; margin: 0 auto; min-height: 100%; position: relative; padding-bottom: 110px; }
+
+  header {
+    padding: 28px 20px 12px;
+  }
+  header .date { font-size: 13px; color: var(--muted); }
+  header h1 { font-size: 24px; font-weight: 600; margin-top: 4px; }
+  header .back {
+    background: none; border: none; font-size: 15px; color: var(--accent);
+    cursor: pointer; padding: 4px 0; margin-bottom: 6px;
+  }
+
+  section.period { padding: 8px 20px 4px; }
+  section.period h2 {
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    letter-spacing: .04em; margin-bottom: 8px; display: flex; justify-content: space-between;
+  }
+  .empty-hint { font-size: 13px; color: #c0bdb6; padding: 6px 2px 10px; }
+
+  /* 스와이프 가능한 일정 항목 */
+  .item-wrap {
+    position: relative; overflow: hidden; border-radius: var(--radius); margin-bottom: 8px;
+  }
+  .item-actions {
+    position: absolute; inset: 0; display: flex; align-items: stretch;
+  }
+  .item-actions .left-action, .item-actions .right-action {
+    display: flex; align-items: center; color: #fff; font-size: 14px; font-weight: 600;
+    padding: 0 20px; width: 50%;
+  }
+  .item-actions .left-action { background: var(--tomorrow); justify-content: flex-start; }
+  .item-actions .right-action { background: var(--danger); justify-content: flex-end; }
+
+  .item {
+    position: relative; background: var(--card); border-radius: var(--radius);
+    padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    transition: transform .25s ease;
+    touch-action: pan-y;
+    cursor: pointer;
+  }
+  .item.dragging { transition: none; }
+  .item.done .title { color: var(--done); text-decoration: line-through; }
+  .item .body { flex: 1; min-width: 0; }
+  .item .title { font-size: 16px; word-break: keep-all; }
+  .item .meta { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .item .time-info { font-size: 12px; color: var(--muted); }
+  .item .check {
+    width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #cfcbc3;
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .item.done .check { background: var(--accent); border-color: var(--accent); }
+  .item.done .check::after { content: "✓"; color: #fff; font-size: 13px; }
+
+  .tag {
+    display: inline-block; font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    background: #eef2f8; color: var(--accent); cursor: pointer; border: none;
+    font-family: inherit;
+  }
+  .tag:active { opacity: .6; }
+
+  .empty-state { text-align: center; color: var(--muted); padding: 60px 20px; font-size: 14px; line-height: 1.7; }
+
+  /* + 버튼 */
+  .fab {
+    position: fixed; right: max(20px, calc(50% - 240px + 20px)); bottom: 28px;
+    width: 58px; height: 58px; border-radius: 50%; border: none;
+    background: var(--accent); color: #fff; font-size: 30px; line-height: 1;
+    box-shadow: 0 6px 16px rgba(74,111,165,.35); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; z-index: 10;
+  }
+  .fab:active { transform: scale(.95); }
+
+  /* 모달 */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    display: none; align-items: flex-end; justify-content: center; z-index: 20;
+  }
+  .overlay.show { display: flex; }
+  .sheet {
+    background: var(--card); width: 100%; max-width: 480px; border-radius: 20px 20px 0 0;
+    padding: 22px 20px 28px; max-height: 92vh; overflow-y: auto;
+    animation: up .25s ease;
+    user-select: text; -webkit-user-select: text;
+  }
+  @keyframes up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .sheet h3 { font-size: 18px; margin-bottom: 18px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .field input[type="text"], .field input[type="date"] {
+    width: 100%; font-size: 16px; padding: 11px 12px; border: 1px solid var(--line);
+    border-radius: 10px; font-family: inherit; background: #fff; color: var(--text);
+  }
+  .seg { display: flex; gap: 8px; }
+  .seg button {
+    flex: 1; padding: 10px 0; border-radius: 10px; border: 1px solid var(--line);
+    background: #fff; font-size: 14px; font-family: inherit; cursor: pointer; color: var(--text);
+  }
+  .seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .seg button:disabled { opacity: .4; cursor: not-allowed; }
+  .notice { font-size: 12px; color: var(--danger); margin-top: 6px; min-height: 16px; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+  .switch { position: relative; width: 46px; height: 26px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span {
+    position: absolute; inset: 0; background: #d6d3cc; border-radius: 26px; cursor: pointer; transition: .2s;
+  }
+  .switch span::before {
+    content: ""; position: absolute; width: 20px; height: 20px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: .2s;
+  }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::before { transform: translateX(20px); }
+  .repeat-opts { margin-top: 12px; display: none; }
+  .repeat-opts.show { display: block; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip-btn {
+    padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: #fff;
+    font-size: 13px; font-family: inherit; cursor: pointer;
+  }
+  .chip-btn.on { background: #eef2f8; border-color: var(--accent); color: var(--accent); }
+  .actions { display: flex; gap: 10px; margin-top: 20px; }
+  .actions button {
+    flex: 1; padding: 14px 0; border-radius: 12px; font-size: 16px; font-family: inherit; cursor: pointer; border: none;
+  }
+  .btn-cancel { background: #f0eee9; color: var(--text); }
+  .btn-save { background: var(--accent); color: #fff; }
+  .btn-save:disabled { opacity: .4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<button class="fab" id="fab" aria-label="일정 추가">+</button>
+
+<div class="overlay" id="overlay">
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ================= 저장소 (localStorage) ================= */
+  const STORAGE_KEY = "now-schedule-v1";
+
+  const PERIODS = [
+    { key: "morning",   label: "오전", start: "07:00", end: "12:00" },
+    { key: "afternoon", label: "오후", start: "12:00", end: "17:00" },
+    { key: "evening",   label: "저녁", start: "17:00", end: "22:00" },
+  ];
+  const MAX_PER_PERIOD = 3;
+
+  function loadData() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return { items: [] };
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed.items) ? parsed : { items: [] };
+    } catch (e) {
+      return { items: [] };
+    }
+  }
+  function saveData() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+  }
+
+  /*
+   * 항목 구조
+   * {
+   *   id, title, period ("morning"|"afternoon"|"evening"), tags: [],
+   *   startDate: "YYYY-MM-DD"  // 이 일정이 처음 시작되는 날짜
+   *   repeat: null | { type: "daily"|"weekly", endDate: "YYYY-MM-DD" | null },
+   *   overrides: { "YYYY-MM-DD": { done: bool, moved: "YYYY-MM-DD"|null, deleted: bool } }
+   *   createdAt
+   * }
+   * - 반복 일정은 날짜별 상태를 overrides에 저장하여 날짜마다 독립적으로 완료/이동/삭제 가능.
+   * - 일회성 일정은 startDate 하나에만 나타남.
+   */
+
+  /* ================= 날짜 유틸 ================= */
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function toKey(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+  function parseKey(k) { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d); }
+  function todayKey() { return toKey(new Date()); }
+  function addDays(key, n) { const d = parseKey(key); d.setDate(d.getDate() + n); return toKey(d); }
+  function daysBetween(a, b) { return Math.round((parseKey(b) - parseKey(a)) / 86400000); }
+  function formatHeaderDate(key) {
+    const d = parseKey(key);
+    const w = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
+    return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${w})`;
+  }
+  function formatShortDate(key) {
+    const d = parseKey(key);
+    return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+  }
+
+  /* 특정 날짜(dateKey)에 항목이 "보이는지" 판정 */
+  function occursOn(item, dateKey) {
+    if (dateKey < item.startDate) return false;
+    if (!item.repeat) return dateKey === item.startDate;
+    if (item.repeat.endDate && dateKey > item.repeat.endDate) return false;
+    if (item.repeat.type === "daily") return true;
+    if (item.repeat.type === "weekly") {
+      return parseKey(dateKey).getDay() === parseKey(item.startDate).getDay();
+    }
+    return false;
+  }
+
+  /* 특정 날짜의 실제 표시 상태 (overrides 반영) */
+  function stateOn(item, dateKey) {
+    const ov = (item.overrides && item.overrides[dateKey]) || {};
+    return { done: !!ov.done, deleted: !!ov.deleted, moved: ov.moved || null };
+  }
+
+  /* 특정 날짜 기준 표시 대상 일정 목록 */
+  function itemsForDate(dateKey) {
+    return state.data.items.filter(it => {
+      if (!occursOn(it, dateKey)) return false;
+      const s = stateOn(it, dateKey);
+      if (s.deleted) return false;
+      if (s.moved && s.moved !== dateKey) return false;
+      return true;
+    });
+  }
+
+  /* 내일로 "이동"된 항목 판정: 원래 날짜가 dateKey인데 moved로 다른 날짜가 지정된 경우 */
+  function isMovedTo(item, dateKey) {
+    // 일회성/반복 공통: 이동된 날짜에만 실제로 나타나야 함
+    // 이동 시 해당 원래날짜 override에 moved 기록 + 대상날짜 override에 "incoming" 기록
+    const incoming = item.incoming || [];
+    return incoming.includes(dateKey);
+  }
+
+  /* ================= 상태 ================= */
+  const state = {
+    data: loadData(),
+    view: { name: "home" },           // home | tag
+    editing: false,
+    swipeLock: false,
+  };
+
+  /* 오늘 날짜에 보여줄 항목 (incoming 포함) */
+  function todaysItems(dateKey) {
+    const base = itemsForDate(dateKey);
+    // 다른 날짜에서 이 날짜로 옮겨진 항목 추가
+    state.data.items.forEach(it => {
+      if (isMovedTo(it, dateKey)) {
+        const ov = (it.overrides && it.overrides[dateKey]) || {};
+        if (!ov.deleted && !base.includes(it)) base.push(it);
+      }
+    });
+    return base;
+  }
+
+  /* ================= 렌더: 홈 ================= */
+  const app = document.getElementById("app");
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function renderHome() {
+    const today = todayKey();
+    const items = todaysItems(today);
+
+    let html = `
+      <header>
+        <div class="date">${formatHeaderDate(today)}</div>
+        <h1>오늘에 집중하기</h1>
+      </header>`;
+
+    if (items.length === 0) {
+      html += `<div class="empty-state">오늘은 비어 있습니다.<br>지금 이 순간에 집중할 일이 있다면 + 로 추가해 보세요.</div>`;
+    }
+
+    PERIODS.forEach(p => {
+      const list = items.filter(it => it.period === p.key);
+      html += `
+        <section class="period">
+          <h2><span>${p.label} <span style="font-weight:400">${p.start}–${p.end}</span></span><span>${list.length}/${MAX_PER_PERIOD}</span></h2>
+          ${list.length === 0 ? `<div class="empty-hint">비어 있음</div>` : ""}
+          ${list.map(renderItem).join("")}
+        </section>`;
+    });
+
+    app.innerHTML = html;
+    bindHomeEvents();
+  }
+
+  function renderItem(it) {
+    const today = todayKey();
+    const s = stateOn(it, today);
+    const tags = (it.tags || []).map(t => `<button class="tag" data-tag="${escapeHtml(t)}">#${escapeHtml(t)}</button>`).join("");
+    const repeatBadge = it.repeat
+      ? `<span class="time-info">${it.repeat.type === "daily" ? "매일" : "매주"}${it.repeat.endDate ? " · ~" + formatShortDate(it.repeat.endDate) : ""}</span>`
+      : "";
+    return `
+      <div class="item-wrap" data-id="${it.id}" data-date="${today}">
+        <div class="item-actions">
+          <div class="left-action">→ 내일로</div>
+          <div class="right-action">삭제 ←</div>
+        </div>
+        <div class="item ${s.done ? "done" : ""}">
+          <div class="check"></div>
+          <div class="body">
+            <div class="title">${escapeHtml(it.title)}</div>
+            <div class="meta">${tags}${repeatBadge}</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  /* ================= 이벤트: 홈 ================= */
+  function bindHomeEvents() {
+    app.querySelectorAll(".item-wrap").forEach(wrap => {
+      const card = wrap.querySelector(".item");
+      attachGestures(wrap, card);
+    });
+    app.querySelectorAll(".tag").forEach(btn => {
+      btn.addEventListener("click", e => {
+        e.stopPropagation();
+        openTagView(btn.dataset.tag);
+      });
+    });
+  }
+
+  /* 스와이프 + 길게 누르기 */
+  function attachGestures(wrap, card) {
+    const id = wrap.dataset.id;
+    const dateKey = wrap.dataset.date;
+    let startX = 0, startY = 0, dx = 0, dragging = false, decided = false, horizontal = false;
+    let pressTimer = null, longFired = false;
+    const THRESH = 80;      // 스와이프 확정 거리
+    const LONG_MS = 550;
+
+    function clearPress() { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } }
+
+    card.addEventListener("pointerdown", e => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      startX = e.clientX; startY = e.clientY; dx = 0;
+      dragging = true; decided = false; horizontal = false; longFired = false;
+      card.setPointerCapture(e.pointerId);
+      clearPress();
+      pressTimer = setTimeout(() => {
+        if (!horizontal && Math.abs(dx) < 6) {
+          longFired = true;
+          toggleDone(id, dateKey);
+          if (navigator.vibrate) navigator.vibrate(12);
+        }
+      }, LONG_MS);
+    });
+
+    card.addEventListener("pointermove", e => {
+      if (!dragging) return;
+      const mx = e.clientX - startX, my = e.clientY - startY;
+      if (!decided && (Math.abs(mx) > 8 || Math.abs(my) > 8)) {
+        decided = true;
+        horizontal = Math.abs(mx) > Math.abs(my);
+        if (horizontal) clearPress();
+        else { dragging = false; clearPress(); }
+      }
+      if (!horizontal) return;
+      dx = mx;
+      card.classList.add("dragging");
+      card.style.transform = `translateX(${dx}px)`;
+    });
+
+    function end() {
+      if (!dragging) { clearPress(); return; }
+      dragging = false;
+      clearPress();
+      card.classList.remove("dragging");
+      if (horizontal && dx > THRESH) {
+        // 오른쪽 스와이프 → 내일로
+        animateOut(card, wrap, 1, () => moveToTomorrow(id, dateKey));
+      } else if (horizontal && dx < -THRESH) {
+        // 왼쪽 스와이프 → 삭제
+        animateOut(card, wrap, -1, () => deleteItem(id, dateKey));
+      } else {
+        card.style.transform = "translateX(0)";
+      }
+      dx = 0;
+    }
+    card.addEventListener("pointerup", end);
+    card.addEventListener("pointercancel", end);
+
+    card.addEventListener("click", e => {
+      if (longFired) { e.stopPropagation(); longFired = false; }
+    }, true);
+  }
+
+  function animateOut(card, wrap, dir, after) {
+    card.classList.remove("dragging");
+    card.style.transition = "transform .25s ease, opacity .25s";
+    card.style.transform = `translateX(${dir * 110}%)`;
+    card.style.opacity = "0";
+    setTimeout(after, 220);
+  }
+
+  /* ================= 데이터 변경 ================= */
+  function findItem(id) { return state.data.items.find(i => i.id === id); }
+
+  function toggleDone(id, dateKey) {
+    const it = findItem(id); if (!it) return;
+    it.overrides = it.overrides || {};
+    const cur = it.overrides[dateKey] || {};
+    it.overrides[dateKey] = { ...cur, done: !cur.done };
+    saveData(); render();
+  }
+
+  function moveToTomorrow(id, dateKey) {
+    const it = findItem(id); if (!it) return;
+    const tomorrow = addDays(dateKey, 1);
+    // 반복 일정이면 이 날짜 인스턴스만 이동, 일회성이면 전체 이동
+    it.overrides = it.overrides || {};
+    if (it.repeat) {
+      it.overrides[dateKey] = { ...(it.overrides[dateKey] || {}), moved: tomorrow };
+      it.incoming = it.incoming || [];
+      if (!it.incoming.includes(tomorrow)) it.incoming.push(tomorrow);
+      // 대상 날짜 override 에 "deleted" 가 있었다면 해제
+      if (it.overrides[tomorrow]) it.overrides[tomorrow] = { ...it.overrides[tomorrow], deleted: false };
+    } else {
+      it.startDate = tomorrow;
+    }
+    saveData(); render();
+  }
+
+  function deleteItem(id, dateKey) {
+    const it = findItem(id); if (!it) return;
+    if (it.repeat) {
+      it.overrides = it.overrides || {};
+      it.overrides[dateKey] = { ...(it.overrides[dateKey] || {}), deleted: true };
+    } else {
+      state.data.items = state.data.items.filter(i => i.id !== id);
+    }
+    saveData(); render();
+  }
+
+  /* ================= 태그 화면 ================= */
+  function openTagView(tag) {
+    state.view = { name: "tag", tag };
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  function renderTagView(tag) {
+    const today = todayKey();
+    // 해당 태그를 가진 모든 항목 (오늘 기준 발생 가능한 것 + 과거/미래 일회성)
+    const matched = state.data.items.filter(it => (it.tags || []).includes(tag));
+    const sorted = matched.slice().sort((a, b) => (a.startDate < b.startDate ? -1 : 1));
+
+    let html = `
+      <header>
+        <button class="back" id="backBtn">← 홈</button>
+        <div class="date">태그</div>
+        <h1>#${escapeHtml(tag)}</h1>
+      </header>`;
+
+    if (sorted.length === 0) {
+      html += `<div class="empty-state">이 태그가 달린 일정이 없습니다.</div>`;
+    } else {
+      html += `<section class="period">`;
+      sorted.forEach(it => {
+        const repeat = it.repeat
+          ? `${it.repeat.type === "daily" ? "매일" : "매주"}${it.repeat.endDate ? " · ~" + formatShortDate(it.repeat.endDate) : ""}`
+          : formatShortDate(it.startDate);
+        const periodLabel = PERIODS.find(p => p.key === it.period).label;
+        html += `
+          <div class="item-wrap" style="pointer-events:none">
+            <div class="item" style="pointer-events:auto;cursor:default">
+              <div class="body">
+                <div class="title">${escapeHtml(it.title)}</div>
+                <div class="meta"><span class="time-info">${periodLabel} · ${repeat}</span></div>
+              </div>
+            </div>
+          </div>`;
+      });
+      html += `</section>`;
+    }
+
+    app.innerHTML = html;
+    document.getElementById("backBtn").addEventListener("click", () => {
+      state.view = { name: "home" }; render(); window.scrollTo(0, 0);
+    });
+  }
+
+  function render() {
+    if (state.view.name === "tag") renderTagView(state.view.tag);
+    else renderHome();
+    document.getElementById("fab").style.display = state.view.name === "home" ? "flex" : "none";
+  }
+
+  /* ================= 추가 모달 ================= */
+  const overlay = document.getElementById("overlay");
+  const sheet = document.getElementById("sheet");
+  const fab = document.getElementById("fab");
+
+  let form = null;
+
+  function openForm() {
+    form = {
+      title: "",
+      period: null,
+      tags: [],
+      tagInput: "",
+      repeatOn: false,
+      repeatType: "daily",
+      endMode: "none",   // none | date
+      endDate: "",
+    };
+    renderForm();
+    overlay.classList.add("show");
+  }
+  function closeForm() {
+    overlay.classList.remove("show");
+    form = null;
+  }
+
+  function periodCount(periodKey) {
+    return itemsForDate(todayKey()).filter(it => it.period === periodKey).length;
+  }
+
+  function renderForm() {
+    const today = todayKey();
+    const periodBtns = PERIODS.map(p => {
+      const full = periodCount(p.key) >= MAX_PER_PERIOD;
+      return `<button data-period="${p.key}" class="${form.period === p.key ? "on" : ""}" ${full ? "disabled" : ""}>${p.label}${full ? " (가득참)" : ""}</button>`;
+    }).join("");
+
+    const tagChips = form.tags.map(t => `<button class="chip-btn on" data-rm-tag="${escapeHtml(t)}">#${escapeHtml(t)} ✕</button>`).join("");
+
+    sheet.innerHTML = `
+      <h3>새 일정</h3>
+      <div class="field">
+        <label>일정 내용</label>
+        <input type="text" id="f-title" value="${escapeHtml(form.title)}" placeholder="무엇에 집중할까요?" maxlength="60" />
+      </div>
+      <div class="field">
+        <label>시간대 (섹션당 최대 ${MAX_PER_PERIOD}개)</label>
+        <div class="seg">${periodBtns}</div>
+        <div class="notice" id="f-notice"></div>
+      </div>
+      <div class="field">
+        <label>태그 (Enter로 추가)</label>
+        <input type="text" id="f-tag" value="${escapeHtml(form.tagInput)}" placeholder="예: 운동, 공부" maxlength="20" />
+        <div class="chips" style="margin-top:8px">${tagChips}</div>
+      </div>
+      <div class="field">
+        <div class="toggle-row">
+          <label style="margin:0;color:var(--text);font-size:15px">반복 일정</label>
+          <label class="switch"><input type="checkbox" id="f-repeat" ${form.repeatOn ? "checked" : ""}/><span></span></label>
+        </div>
+        <div class="repeat-opts ${form.repeatOn ? "show" : ""}">
+          <div class="seg" style="margin-bottom:12px">
+            <button data-rtype="daily" class="${form.repeatType === "daily" ? "on" : ""}">매일</button>
+            <button data-rtype="weekly" class="${form.repeatType === "weekly" ? "on" : ""}">매주</button>
+          </div>
+          <div class="seg" style="margin-bottom:12px">
+            <button data-endmode="none" class="${form.endMode === "none" ? "on" : ""}">종료일 없음</button>
+            <button data-endmode="date" class="${form.endMode === "date" ? "on" : ""}">종료일 설정</button>
+          </div>
+          ${form.endMode === "date" ? `<input type="date" id="f-enddate" min="${today}" value="${form.endDate}" />` : ""}
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn-cancel" id="f-cancel">취소</button>
+        <button class="btn-save" id="f-save" disabled>추가</button>
+      </div>`;
+
+    bindFormEvents();
+    validateForm();
+  }
+
+  function validateForm() {
+    const ok = form.title.trim().length > 0 && form.period &&
+      periodCount(form.period) < MAX_PER_PERIOD &&
+      (!form.repeatOn || form.endMode === "none" || (form.endMode === "date" && form.endDate && form.endDate >= todayKey()));
+    const btn = document.getElementById("f-save");
+    if (btn) btn.disabled = !ok;
+    return ok;
+  }
+
+  function bindFormEvents() {
+    const titleEl = document.getElementById("f-title");
+    titleEl.addEventListener("input", e => { form.title = e.target.value; validateForm(); });
+
+    sheet.querySelectorAll("[data-period]").forEach(b => b.addEventListener("click", () => {
+      if (b.disabled) return;
+      form.period = b.dataset.period;
+      renderForm();
+      if (!form.period) return;
+      const n = document.getElementById("f-notice");
+      if (n && periodCount(form.period) >= MAX_PER_PERIOD) n.textContent = "";
+    }));
+
+    const tagEl = document.getElementById("f-tag");
+    tagEl.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === ",") {
+        e.preventDefault();
+        const t = tagEl.value.trim().replace(/^#/, "");
+        if (t && !form.tags.includes(t) && form.tags.length < 5) form.tags.push(t);
+        form.tagInput = "";
+        renderForm();
+        document.getElementById("f-tag").focus();
+      }
+    });
+    tagEl.addEventListener("input", e => { form.tagInput = e.target.value; });
+
+    sheet.querySelectorAll("[data-rm-tag]").forEach(b => b.addEventListener("click", () => {
+      form.tags = form.tags.filter(t => t !== b.dataset.rmTag);
+      renderForm();
+    }));
+
+    document.getElementById("f-repeat").addEventListener("change", e => {
+      form.repeatOn = e.target.checked;
+      if (!form.repeatOn) { form.endMode = "none"; form.endDate = ""; }
+      renderForm();
+    });
+
+    sheet.querySelectorAll("[data-rtype]").forEach(b => b.addEventListener("click", () => {
+      form.repeatType = b.dataset.rtype; renderForm();
+    }));
+    sheet.querySelectorAll("[data-endmode]").forEach(b => b.addEventListener("click", () => {
+      form.endMode = b.dataset.endmode;
+      if (form.endMode === "none") form.endDate = "";
+      renderForm();
+    }));
+
+    const endEl = document.getElementById("f-enddate");
+    if (endEl) endEl.addEventListener("change", e => { form.endDate = e.target.value; validateForm(); });
+
+    document.getElementById("f-cancel").addEventListener("click", closeForm);
+    document.getElementById("f-save").addEventListener("click", submitForm);
+  }
+
+  function submitForm() {
+    if (!validateForm()) return;
+    const item = {
+      id: "i_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      title: form.title.trim(),
+      period: form.period,
+      tags: form.tags.slice(),
+      startDate: todayKey(),
+      repeat: form.repeatOn
+        ? { type: form.repeatType, endDate: form.endMode === "date" ? form.endDate : null }
+        : null,
+      overrides: {},
+      incoming: [],
+      createdAt: Date.now(),
+    };
+    state.data.items.push(item);
+    saveData();
+    closeForm();
+    render();
+  }
+
+  overlay.addEventListener("click", e => { if (e.target === overlay) closeForm(); });
+  fab.addEventListener("click", openForm);
+
+  /* ================= 초기화 ================= */
+  render();
+
+  // 자정이 지나면 오늘 화면 갱신 (탭을 열어둔 경우)
+  let lastDay = todayKey();
+  setInterval(() => {
+    if (todayKey() !== lastDay) { lastDay = todayKey(); if (state.view.name === "home") render(); }
+  }, 30000);
+})();
+</script>
+</body>
+</html>
